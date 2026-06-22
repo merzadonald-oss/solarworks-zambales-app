@@ -24,7 +24,7 @@ export default function BOQScreen() {
   const params = useLocalSearchParams<{ systemKw?: string; systemType?: string; batteryKwh?: string; panelW?: string }>();
   const { isReady, getPriceMap, getSetting, setSetting, getBOQDocuments, saveBOQDocument, deleteBOQDocument } = useDatabase();
   const [activeTab, setActiveTab] = useState<Tab>("new");
-  const [projectTitle, setProjectTitle] = useState("");
+  const [ownerName, setOwnerName] = useState("");
   const [location, setLocation] = useState("");
   const [systemType, setSystemType] = useState<SystemType>("HYBRID");
   const [systemKw, setSystemKw] = useState(6.0);
@@ -62,7 +62,7 @@ export default function BOQScreen() {
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
   useEffect(() => {
-    if (!isReady || Object.keys({}).length === 0) return;
+    if (!isReady) return;
     getPriceMap().then((prices) => {
       if (Object.keys(prices).length === 0) return;
       try {
@@ -86,19 +86,36 @@ export default function BOQScreen() {
     const prices = await getPriceMap();
     const freshResult = EngCalc.computeBOQ({ systemKw, panelW, systemType, batteryKwh: battKwh, numRows: 2, prices });
 
-    const titleFinal = projectTitle || `${systemKw}kWp ${systemType} System`;
+    const ownerFinal = ownerName || "Client";
+    const projectTitle = `Supply, Delivery, Installation, Configuration, Testing and Commissioning of PV System for ${ownerFinal}`;
+
     const pdfPath = await generateBOQPDF({
-      boqNumber, projectTitle: titleFinal, location, systemType,
-      systemKw, batteryKwh: battKwh, panelW, boqResult: freshResult,
-      estimatedGenKwh: freshResult.numPanels > 0 ? systemKw * 5.5 * 0.85 : undefined,
-      companyName: companyInfo.name, companyAddress: companyInfo.address,
-      companyPhone: companyInfo.phone, companySocial: companyInfo.social,
+      boqNumber,
+      projectTitle,
+      ownerName: ownerFinal,
+      location,
+      systemType,
+      systemKw,
+      batteryKwh: battKwh,
+      panelW,
+      boqResult: freshResult,
+      estimatedGenKwh: systemKw * 5.5 * 0.85,
+      companyName: companyInfo.name,
+      companyAddress: companyInfo.address,
+      companyPhone: companyInfo.phone,
+      companySocial: companyInfo.social,
     });
 
     await saveBOQDocument({
-      boq_number: boqNumber, created_at: Date.now(), project_title: titleFinal,
-      location, system_type: systemType, system_kw: systemKw,
-      battery_kwh: battKwh, total_php: freshResult.total, pdf_path: pdfPath ?? "",
+      boq_number: boqNumber,
+      created_at: Date.now(),
+      project_title: ownerFinal,
+      location,
+      system_type: systemType,
+      system_kw: systemKw,
+      battery_kwh: battKwh,
+      total_php: freshResult.total,
+      pdf_path: pdfPath ?? "",
     });
 
     await loadHistory();
@@ -114,8 +131,11 @@ export default function BOQScreen() {
     <View style={[styles.flex, { backgroundColor: colors.background }]}>
       <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         {(["new", "history"] as Tab[]).map((t) => (
-          <TouchableOpacity key={t} style={[styles.tab, activeTab === t && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
-            onPress={() => { setActiveTab(t); Haptics.selectionAsync(); }}>
+          <TouchableOpacity
+            key={t}
+            style={[styles.tab, activeTab === t && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+            onPress={() => { setActiveTab(t); Haptics.selectionAsync(); }}
+          >
             <Text style={[styles.tabText, { color: activeTab === t ? colors.primary : colors.mutedForeground }]}>
               {t === "new" ? "New BOQ" : `History (${history.length})`}
             </Text>
@@ -127,20 +147,33 @@ export default function BOQScreen() {
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 40 }]} showsVerticalScrollIndicator={false}>
           <View style={[styles.card, { backgroundColor: colors.card }]}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>Project Details</Text>
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Name of Owner</Text>
             <TextInput
               style={[styles.textInput, { borderColor: colors.border, color: colors.foreground }]}
-              placeholder="Project Title (optional)"
+              placeholder="e.g. Juan dela Cruz"
               placeholderTextColor={colors.mutedForeground}
-              value={projectTitle}
-              onChangeText={setProjectTitle}
+              value={ownerName}
+              onChangeText={setOwnerName}
             />
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 8 }]}>Location</Text>
             <TextInput
               style={[styles.textInput, { borderColor: colors.border, color: colors.foreground }]}
-              placeholder="Location (e.g. Iba, Zambales)"
+              placeholder="e.g. Iba, Zambales"
               placeholderTextColor={colors.mutedForeground}
               value={location}
               onChangeText={setLocation}
             />
+
+            {ownerName.length > 0 && (
+              <View style={[styles.titlePreview, { backgroundColor: colors.muted }]}>
+                <Text style={[styles.titlePreviewLabel, { color: colors.mutedForeground }]}>PDF Title:</Text>
+                <Text style={[styles.titlePreviewText, { color: colors.foreground }]} numberOfLines={3}>
+                  Supply, Delivery, Installation, Configuration, Testing and Commissioning of PV System for {ownerName}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -148,8 +181,11 @@ export default function BOQScreen() {
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>System Type</Text>
             <View style={styles.segRow}>
               {sysTypes.map((t) => (
-                <TouchableOpacity key={t} style={[styles.seg, { backgroundColor: systemType === t ? colors.primary : colors.muted, borderColor: systemType === t ? colors.primary : colors.border }]}
-                  onPress={() => setSystemType(t)}>
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.seg, { backgroundColor: systemType === t ? colors.primary : colors.muted, borderColor: systemType === t ? colors.primary : colors.border }]}
+                  onPress={() => setSystemType(t)}
+                >
                   <Text style={[styles.segText, { color: systemType === t ? "#fff" : colors.foreground }]}>{typeLabels[t]}</Text>
                 </TouchableOpacity>
               ))}
@@ -190,9 +226,9 @@ export default function BOQScreen() {
 
           {result && (
             <View style={[styles.previewCard, { backgroundColor: colors.orangeLight, borderColor: colors.primary + "30" }]}>
-              <Text style={[styles.previewTitle, { color: colors.orange }]}>Preview</Text>
+              <Text style={[styles.previewTitle, { color: colors.orange }]}>PRICE PREVIEW</Text>
               <Text style={[styles.previewDesc, { color: colors.navy }]}>
-                {result.numPanels} panels × {panelW}W • {result.inverterKey.replace("Inverter, ", "")}
+                {result.numPanels} × {panelW}W panels • {result.inverterKey.replace("Inverter, ", "")}
                 {battKwh > 0 ? ` • ${battKwh}kWh battery` : ""}
               </Text>
               <Text style={[styles.previewTotal, { color: colors.orange }]}>{formatPhp(result.total)}</Text>
@@ -228,11 +264,17 @@ export default function BOQScreen() {
               <BOQListItem
                 key={doc.id}
                 doc={doc}
-                onPress={() => Alert.alert(doc.boq_number, `Total: ${formatPhp(doc.total_php)}\nSystem: ${doc.system_kw}kWp ${doc.system_type}\nLocation: ${doc.location || "—"}`)}
+                onPress={() => Alert.alert(
+                  doc.boq_number,
+                  `Owner: ${doc.project_title}\nTotal: ${formatPhp(doc.total_php)}\nSystem: ${doc.system_kw}kWp ${doc.system_type}\nLocation: ${doc.location || "—"}`
+                )}
                 onLongPress={() =>
                   Alert.alert("Delete", `Delete ${doc.boq_number}?`, [
                     { text: "Cancel", style: "cancel" },
-                    { text: "Delete", style: "destructive", onPress: async () => { await deleteBOQDocument(doc.id); loadHistory(); } },
+                    {
+                      text: "Delete", style: "destructive",
+                      onPress: async () => { await deleteBOQDocument(doc.id); loadHistory(); }
+                    },
                   ])
                 }
               />
@@ -250,15 +292,18 @@ const styles = StyleSheet.create({
   tab: { flex: 1, paddingVertical: 14, alignItems: "center" },
   tabText: { fontSize: 14, fontWeight: "600" },
   content: { padding: 16, gap: 12 },
-  card: { borderRadius: 16, padding: 16, gap: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  card: { borderRadius: 16, padding: 16, gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardTitle: { fontSize: 15, fontWeight: "700" },
-  textInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
   fieldLabel: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
+  textInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
+  titlePreview: { borderRadius: 8, padding: 10, gap: 3, marginTop: 4 },
+  titlePreviewLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  titlePreviewText: { fontSize: 12, lineHeight: 17 },
   segRow: { flexDirection: "row", gap: 8 },
   seg: { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, alignItems: "center" },
   segText: { fontSize: 11, fontWeight: "600" },
   paramRow: { flexDirection: "row", gap: 10 },
-  paramField: { flex: 1 },
+  paramField: { flex: 1, gap: 4 },
   paramInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 16, fontWeight: "700", textAlign: "center" },
   previewCard: { borderRadius: 16, padding: 16, borderWidth: 1, gap: 4 },
   previewTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
@@ -267,7 +312,7 @@ const styles = StyleSheet.create({
   previewVat: { fontSize: 11, fontStyle: "italic" },
   generateBtn: { borderRadius: 14, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: "#E87C27", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 6 },
   generateBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  empty: { borderRadius: 16, padding: 40, alignItems: "center", gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  empty: { borderRadius: 16, padding: 40, alignItems: "center", gap: 10 },
   emptyText: { fontSize: 16, fontWeight: "600" },
   emptySub: { fontSize: 13, textAlign: "center" },
 });

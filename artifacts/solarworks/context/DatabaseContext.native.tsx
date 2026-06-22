@@ -131,13 +131,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
       const defaults: Array<[string, string]> = [
         ["usd_exchange_rate", "56.00"],
-        ["admin_pin", "0000"],
+        ["admin_pin", "209920"],
         ["boq_daily_counter", "0"],
         ["boq_counter_date", ""],
         ["company_name", "SolarWorks Zambales"],
         ["company_address", "Brgy. Sto. Rosario, Iba, Zambales"],
         ["company_phone", "+63 912 458 2437"],
         ["company_social", "facebook.com/SolarWorksZambales"],
+        ["sheets_csv_url", "https://docs.google.com/spreadsheets/d/1fdiw6Nh0pPUyKpJqQZWfYm_rZpBgwBzeqQIYecXTYsc/export?format=csv"],
       ];
       for (const [key, val] of defaults) {
         await database.runAsync(

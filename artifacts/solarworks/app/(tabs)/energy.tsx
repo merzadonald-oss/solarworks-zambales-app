@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, FlatList, Modal, Platform,
+  TextInput, PanResponder, Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +26,98 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 const PSH = 5.5;
 
+function nextBatterySize(kwh: number): number {
+  const sizes = [5, 10, 15, 20, 25, 30];
+  return sizes.find((s) => s >= kwh) ?? 30;
+}
+
+function HourSlider({
+  value, onChange, min = 1, max = 24, colors,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  colors: any;
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => handleX(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => handleX(e.nativeEvent.locationX),
+    })
+  ).current;
+
+  const trackWidthRef = useRef(0);
+
+  function handleX(x: number) {
+    const tw = trackWidthRef.current;
+    if (tw === 0) return;
+    const pct = Math.min(Math.max(x / tw, 0), 1);
+    const raw = min + pct * (max - min);
+    const rounded = Math.max(min, Math.min(max, Math.round(raw)));
+    onChange(rounded);
+    Haptics.selectionAsync();
+  }
+
+  const pct = (value - min) / (max - min);
+  const thumbLeft = trackWidth > 0 ? pct * (trackWidth - 28) : 0;
+
+  return (
+    <View style={sliderStyles.wrapper}>
+      <View
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          setTrackWidth(w);
+          trackWidthRef.current = w;
+        }}
+        {...panResponder.panHandlers}
+        style={[sliderStyles.track, { backgroundColor: colors.border }]}
+        hitSlop={{ top: 16, bottom: 16 }}
+      >
+        <View
+          style={[sliderStyles.fill, { width: `${pct * 100}%` as any, backgroundColor: colors.primary }]}
+        />
+        {trackWidth > 0 && (
+          <View
+            style={[
+              sliderStyles.thumb,
+              { left: thumbLeft, backgroundColor: colors.primary, borderColor: "#fff" },
+            ]}
+          />
+        )}
+      </View>
+      <View style={sliderStyles.tickRow}>
+        {[1, 6, 12, 18, 24].map((t) => (
+          <TouchableOpacity key={t} onPress={() => onChange(t)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+            <Text style={[sliderStyles.tick, { color: value === t ? colors.primary : colors.mutedForeground, fontWeight: value === t ? "700" : "400" }]}>{t}h</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const sliderStyles = StyleSheet.create({
+  wrapper: { gap: 10 },
+  track: {
+    height: 8, borderRadius: 4, position: "relative",
+    justifyContent: "center",
+  },
+  fill: { height: 8, borderRadius: 4, position: "absolute", left: 0 },
+  thumb: {
+    position: "absolute", width: 28, height: 28, borderRadius: 14,
+    borderWidth: 3, top: -10,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 4,
+  },
+  tickRow: { flexDirection: "row", justifyContent: "space-between" },
+  tick: { fontSize: 12 },
+});
+
 export default function EnergyScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -35,7 +127,7 @@ export default function EnergyScreen() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<Category>("all");
   const [added, setAdded] = useState<AddedItem[]>([]);
-  const [showRec, setShowRec] = useState(false);
+  const [backupHours, setBackupHours] = useState(4);
 
   useEffect(() => {
     if (isReady) getAppliances().then(setAppliances);
@@ -84,8 +176,25 @@ export default function EnergyScreen() {
   const totalKwh = totalWh / 1000;
   const energyResult = loads.length > 0 ? EngCalc.computeEnergy(loads, PSH) : null;
 
+  const rawBatteryKwh = totalKwh > 0 ? (totalKwh / 24 * backupHours) / 0.8 : 0;
+  const batteryKwh = rawBatteryKwh > 0 ? nextBatterySize(rawBatteryKwh) : 0;
+  const recSystemKw = energyResult?.recommendedKwp ?? 0;
+
+  const sendToCalculator = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.push({
+      pathname: "/(tabs)/calculator",
+      params: {
+        systemKw: String(recSystemKw),
+        systemType: batteryKwh > 0 ? "HYBRID" : "GRID_TIE",
+        batteryKwh: String(batteryKwh),
+      },
+    });
+  };
+
   const categories: Category[] = ["all", "cooling", "kitchen", "water", "entertainment", "lighting", "other"];
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const BOTTOM_CARD_HEIGHT = loads.length > 0 ? 220 : 0;
 
   return (
     <View style={[styles.flex, { backgroundColor: colors.background }]}>
@@ -105,11 +214,17 @@ export default function EnergyScreen() {
         )}
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
+      <ScrollView
+        horizontal showsHorizontalScrollIndicator={false}
+        style={styles.catScroll} contentContainerStyle={styles.catContent}
+      >
         {categories.map((c) => (
           <TouchableOpacity
             key={c}
-            style={[styles.catChip, { backgroundColor: category === c ? colors.primary : colors.card, borderColor: category === c ? colors.primary : colors.border }]}
+            style={[styles.catChip, {
+              backgroundColor: category === c ? colors.primary : colors.card,
+              borderColor: category === c ? colors.primary : colors.border
+            }]}
             onPress={() => { setCategory(c); Haptics.selectionAsync(); }}
           >
             <Feather name={CATEGORY_ICONS[c] as any} size={12} color={category === c ? "#fff" : colors.mutedForeground} />
@@ -120,7 +235,11 @@ export default function EnergyScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.flex} contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 140 }]}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + BOTTOM_CARD_HEIGHT + 20 }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.applianceGrid}>
           {filtered.map((a) => (
             <TouchableOpacity
@@ -164,7 +283,7 @@ export default function EnergyScreen() {
                     </View>
                   </View>
                   <View style={styles.stepperGroup}>
-                    <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>Hours</Text>
+                    <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>Hours/day</Text>
                     <View style={styles.stepper}>
                       <TouchableOpacity onPress={() => updateItem(item.appliance.id, "hours", -0.5)} style={[styles.stepperBtn, { borderColor: colors.border }]}>
                         <Feather name="minus" size={12} color={colors.foreground} />
@@ -175,7 +294,10 @@ export default function EnergyScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                  <TouchableOpacity onPress={() => removeItem(item.appliance.id)} style={[styles.deleteBtn, { backgroundColor: colors.destructive + "15" }]}>
+                  <TouchableOpacity
+                    onPress={() => removeItem(item.appliance.id)}
+                    style={[styles.deleteBtn, { backgroundColor: colors.destructive + "15" }]}
+                  >
                     <Feather name="trash-2" size={14} color={colors.destructive} />
                   </TouchableOpacity>
                 </View>
@@ -185,86 +307,56 @@ export default function EnergyScreen() {
         )}
       </ScrollView>
 
-      {added.length > 0 && (
-        <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: bottomPad + 10 }]}>
-          <View>
-            <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Total Daily Load</Text>
-            <Text style={[styles.totalValue, { color: colors.primary }]}>{totalKwh.toFixed(2)} kWh/day</Text>
+      {loads.length > 0 && (
+        <View style={[styles.bottomCard, {
+          backgroundColor: colors.card, borderTopColor: colors.border,
+          paddingBottom: bottomPad + 80,
+        }]}>
+          <View style={styles.kwhRow}>
+            <View>
+              <Text style={[styles.kwhLabel, { color: colors.mutedForeground }]}>Total Daily Load</Text>
+              <View style={styles.kwhValueRow}>
+                <Text style={[styles.kwhValue, { color: colors.primary }]}>{totalKwh.toFixed(2)}</Text>
+                <Text style={[styles.kwhUnit, { color: colors.primary }]}> kWh/day</Text>
+              </View>
+              {energyResult && (
+                <Text style={[styles.kwhSub, { color: colors.mutedForeground }]}>
+                  Recommended: {recSystemKw} kWp
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.calcBtn, { backgroundColor: colors.primary }]}
+              onPress={sendToCalculator}
+            >
+              <Feather name="sliders" size={16} color="#fff" />
+              <Text style={styles.calcBtnText}>Price It</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.recBtn, { backgroundColor: colors.primary }]}
-            onPress={() => { setShowRec(true); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }}
-          >
-            <Text style={styles.recBtnText}>Get Recommendation</Text>
-            <Feather name="arrow-right" size={16} color="#fff" />
-          </TouchableOpacity>
+
+          <View style={[styles.sliderSection, { borderTopColor: colors.border }]}>
+            <View style={styles.sliderHeaderRow}>
+              <View style={styles.sliderTitleGroup}>
+                <Feather name="battery-charging" size={14} color={colors.primary} />
+                <Text style={[styles.sliderTitle, { color: colors.foreground }]}>Backup Duration</Text>
+              </View>
+              <View style={styles.batteryDisplay}>
+                <Text style={[styles.batteryHours, { color: colors.primary }]}>{backupHours}h</Text>
+                <Text style={[styles.batteryKwh, { color: colors.mutedForeground }]}>
+                  → {batteryKwh} kWh battery
+                </Text>
+              </View>
+            </View>
+            <HourSlider
+              value={backupHours}
+              onChange={setBackupHours}
+              min={1}
+              max={24}
+              colors={colors}
+            />
+          </View>
         </View>
       )}
-
-      <Modal visible={showRec} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowRec(false)}>
-        <RecommendationSheet
-          energyResult={energyResult}
-          loads={loads}
-          onClose={() => setShowRec(false)}
-          onUseSizing={(kw, batt) => {
-            setShowRec(false);
-            router.push({ pathname: "/(tabs)/calculator", params: { systemKw: String(kw), systemType: batt > 0 ? "HYBRID" : "GRID_TIE", batteryKwh: String(batt) } });
-          }}
-          colors={colors}
-          insets={insets}
-        />
-      </Modal>
-    </View>
-  );
-}
-
-function RecommendationSheet({ energyResult, loads, onClose, onUseSizing, colors, insets }: any) {
-  if (!energyResult) return null;
-  const battOptions = [
-    { label: "No Battery", kwh: 0, days: "Grid-Tie" },
-    { label: "Half-Day Backup", kwh: energyResult.batteryRecs["0.5day"], days: "0.5 day" },
-    { label: "Full-Day Backup", kwh: energyResult.batteryRecs["1.0day"], days: "1 day" },
-    { label: "2-Day Backup", kwh: energyResult.batteryRecs["2.0day"], days: "2 days" },
-  ];
-  return (
-    <View style={[styles.flex, { backgroundColor: colors.background }]}>
-      <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.modalTitle, { color: colors.foreground }]}>Recommendation</Text>
-        <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
-      </View>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }}>
-        <View style={[styles.recHighlight, { backgroundColor: colors.orangeLight }]}>
-          <Text style={[styles.recHighlightLabel, { color: colors.orange }]}>Recommended System Size</Text>
-          <Text style={[styles.recHighlightValue, { color: colors.orange }]}>{energyResult.recommendedKwp} kWp</Text>
-          <Text style={[styles.recHighlightSub, { color: colors.orange }]}>Est. daily generation: {energyResult.estimatedGenKwh.toFixed(1)} kWh</Text>
-        </View>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 20 }]}>BATTERY OPTIONS</Text>
-        {battOptions.map((opt, i) => (
-          <TouchableOpacity key={i}
-            style={[styles.battOption, { backgroundColor: colors.card }]}
-            onPress={() => onUseSizing(energyResult.recommendedKwp, opt.kwh)}
-          >
-            <View>
-              <Text style={[styles.battOptionLabel, { color: colors.foreground }]}>{opt.label}</Text>
-              <Text style={[styles.battOptionSub, { color: colors.mutedForeground }]}>
-                {opt.kwh > 0 ? `${opt.kwh} kWh — ${opt.days} backup` : "Grid power only"}
-              </Text>
-            </View>
-            <Feather name="arrow-right" size={18} color={colors.primary} />
-          </TouchableOpacity>
-        ))}
-        <View style={[styles.loadSummary, { backgroundColor: colors.card, marginTop: 16 }]}>
-          <Text style={[styles.cardTitle, { color: colors.foreground, marginBottom: 10 }]}>Load Summary</Text>
-          {loads.map((l: ApplianceLoad, i: number) => (
-            <Text key={i} style={[styles.loadItem, { color: colors.mutedForeground }]}>
-              • {l.name} × {l.qty} @ {l.hoursPerDay}h/day = {(l.wattage * l.qty * l.hoursPerDay).toLocaleString()} Wh
-            </Text>
-          ))}
-          <Text style={[styles.loadTotal, { color: colors.foreground, marginTop: 8 }]}>
-            Total: {(loads.reduce((s: number, l: ApplianceLoad) => s + l.wattage * l.qty * l.hoursPerDay, 0) / 1000).toFixed(2)} kWh/day
-          </Text>
-        </View>
-      </ScrollView>
     </View>
   );
 }
@@ -295,22 +387,25 @@ const styles = StyleSheet.create({
   stepperBtn: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   stepperVal: { fontSize: 14, fontWeight: "700", minWidth: 30, textAlign: "center" },
   deleteBtn: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", marginLeft: "auto" },
-  bottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 8 },
-  totalLabel: { fontSize: 11, fontWeight: "600" },
-  totalValue: { fontSize: 20, fontWeight: "800" },
-  recBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
-  recBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1 },
-  modalTitle: { fontSize: 18, fontWeight: "700" },
-  recHighlight: { borderRadius: 16, padding: 20, gap: 4 },
-  recHighlightLabel: { fontSize: 13, fontWeight: "600" },
-  recHighlightValue: { fontSize: 36, fontWeight: "800" },
-  recHighlightSub: { fontSize: 13 },
-  battOption: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderRadius: 12, marginBottom: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
-  battOptionLabel: { fontSize: 14, fontWeight: "600" },
-  battOptionSub: { fontSize: 12, marginTop: 2 },
-  loadSummary: { borderRadius: 16, padding: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
-  loadItem: { fontSize: 12, lineHeight: 20 },
-  loadTotal: { fontSize: 14, fontWeight: "700" },
-  cardTitle: { fontSize: 15, fontWeight: "700" },
+  bottomCard: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    borderTopWidth: 1, paddingHorizontal: 16, paddingTop: 14,
+    shadowColor: "#000", shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 10,
+  },
+  kwhRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  kwhLabel: { fontSize: 11, fontWeight: "600" },
+  kwhValueRow: { flexDirection: "row", alignItems: "baseline" },
+  kwhValue: { fontSize: 28, fontWeight: "800" },
+  kwhUnit: { fontSize: 14, fontWeight: "600" },
+  kwhSub: { fontSize: 12, marginTop: 2 },
+  calcBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
+  calcBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  sliderSection: { borderTopWidth: 1, paddingTop: 14, gap: 10 },
+  sliderHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sliderTitleGroup: { flexDirection: "row", alignItems: "center", gap: 6 },
+  sliderTitle: { fontSize: 13, fontWeight: "600" },
+  batteryDisplay: { alignItems: "flex-end", gap: 2 },
+  batteryHours: { fontSize: 20, fontWeight: "800" },
+  batteryKwh: { fontSize: 11 },
 });

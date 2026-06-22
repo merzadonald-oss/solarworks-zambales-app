@@ -48,19 +48,19 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="calculator"
-        options={{
-          title: "Price Calculator",
-          tabBarLabel: "Calculator",
-          tabBarIcon: ({ color }) => <Feather name="sliders" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="energy"
         options={{
           title: "Energy Calculator",
           tabBarLabel: "Energy",
           tabBarIcon: ({ color }) => <Feather name="zap" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="calculator"
+        options={{
+          title: "Price Calculator",
+          tabBarLabel: "Calculator",
+          tabBarIcon: ({ color }) => <Feather name="sliders" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -74,5 +74,3 @@ export default function TabLayout() {
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({});

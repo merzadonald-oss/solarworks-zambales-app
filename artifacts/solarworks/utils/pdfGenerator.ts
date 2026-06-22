@@ -8,6 +8,7 @@ import { ApplianceLoad } from "./engCalc";
 export interface PDFParams {
   boqNumber: string;
   projectTitle: string;
+  ownerName: string;
   location: string;
   systemType: string;
   systemKw: number;
@@ -34,7 +35,7 @@ function systemTypeLabel(t: string): string {
 
 export async function generateBOQPDF(params: PDFParams): Promise<string | null> {
   const {
-    boqNumber, projectTitle, location, systemType, systemKw, batteryKwh,
+    boqNumber, projectTitle, ownerName, location, systemType, systemKw, batteryKwh,
     panelW, boqResult: r, loads, estimatedGenKwh,
     companyName, companyAddress, companyPhone, companySocial
   } = params;
@@ -128,7 +129,6 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
 </style>
 </head>
 <body>
-  <!-- HEADER -->
   <table width="100%" style="background:#E87C27;padding:12px 16px;border-radius:4px 4px 0 0">
     <tr>
       <td style="width:60px;text-align:center">
@@ -146,18 +146,16 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
     <span style="color:white;font-weight:600;font-size:11pt">PHOTO VOLTAIC SYSTEM BILL OF QUANTITIES</span>
   </div>
 
-  <!-- INFO -->
   <div style="margin:12px 0 8px">
     <div style="color:#E87C27;font-weight:700;font-size:9pt">BOQ #: ${boqNumber}</div>
     <div style="font-size:9pt">Date: ${dateStr}</div>
+    <div style="font-size:9pt"><strong>Prepared for:</strong> ${ownerName}</div>
   </div>
 
-  <!-- SPECS -->
   <div style="margin-bottom:12px">
-    <div style="color:#E87C27;font-weight:700;font-size:10pt;margin-bottom:6px">SYSTEM SPECIFICATIONS</div>
+    <div style="color:#E87C27;font-weight:700;font-size:10pt;margin-bottom:6px">SCOPE OF WORK</div>
     <div style="font-size:9pt;margin-bottom:4px">
-      <strong>Project Title:</strong> Supply, Delivery, Installation, Configuration, Testing and Commissioning of
-      <span style="color:#007AFF">${systemKw}kWP ${typeLabel} PV System for ${location || "TBD"}</span>
+      <strong>Project Title:</strong> <span style="color:#007AFF">${projectTitle}</span>
     </div>
     <div style="font-size:9pt;margin-bottom:4px"><strong>Location:</strong> ${location || "—"}</div>
     <table width="100%" style="font-size:9pt;margin-top:4px">
@@ -172,7 +170,6 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
     </table>
   </div>
 
-  <!-- ITEM TABLE -->
   <table width="100%" style="border-collapse:collapse;font-size:9pt">
     <thead>
       <tr style="background:#1C1C1E;color:white">
@@ -206,7 +203,6 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
 
   ${loadSummaryHtml}
 
-  <!-- WARRANTY & NOTES -->
   <table width="100%" style="margin-top:20px;border-top:2px solid #E87C27">
     <tr>
       <td width="50%" style="padding:12px 12px 12px 0;vertical-align:top;border-right:1px solid #E5E5EA">
@@ -232,8 +228,7 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
     </tr>
   </table>
 
-  <!-- FOOTER -->
-  <div style="margin-top:20px;padding-top:8px;border-top:1px solid #E5E5EA;text-align:center;color:#8E8E93;font-size:7pt">
+  <div style="margin-top:16px;text-align:center;color:#8E8E93;font-size:7pt">
     This is a system-generated document from SolarWorks Zambales App
   </div>
 </body>
