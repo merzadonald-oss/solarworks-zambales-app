@@ -1,0 +1,2 @@
+- [SolarWorks platform shims](solarworks-platform-shims.md) — react-native-maps and expo-sqlite need platform-specific files to build on web
+- [SolarWorks eng calc](solarworks-eng-calc.md) — validated engineering formulas for panel count, mounting, electrical, BOQ pricing
