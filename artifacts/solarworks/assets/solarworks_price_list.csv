@@ -1,0 +1,36 @@
+Description,Unit,Unit Cost (PHP)
+"Conductor, PV, 4.0mm²","meters",100
+"Conductor, THHN, 5.5mm²","meters",80
+"Conductor, THHN, 8.0mm²","meters",125
+"Conductor, Battery, 35mm²","meters",450
+"Connector, MC4, Set","Pcs",90
+"Conductor, Grounding","Pcs",145
+"Grounding Rod, with Clamp","Pc",1500
+"Lug, PV Grounding","Pcs",50
+"Cable Tray, Aluminum","Pcs",660
+"Connector, PV Railings","Pcs",80
+"PV Clamp, End","Pcs",50
+"PV Clamp, Mid","Pcs",50
+"PV Mounting Bracket, L Foot","Pcs",90
+"PV Roof Railings, 2.4m","Pcs",900
+"Circuit Breaker, 125AT, DC","Pc",1800
+"Circuit Breaker, 20AT, DC","Pcs",500
+"Circuit Breaker, 63AT, AC","Pcs",300
+"Automatic Transfer Switch, 125A","Pcs",2600
+"Distribution Box, 15 Ways","Pcs",1000
+"Electrical Conduit, HDPE Spiral, 32mm","Pcs",120
+"Enclosure, Metal, 300x300x160mm","Pcs",2600
+"Surge Protection Device (SPD), AC","Pcs",1350
+"Surge Protection Device (SPD), DC","Pcs",1350
+"Battery, 5kWhr, Lithium, 6000 Cycle","Unit",50000
+"Battery, 10kWhr, Lithium, 6000 Cycle","Unit",85000
+"Battery, 15kWhr, Lithium, 6000 Cycle","Unit",110000
+"Inverter, 6kW, Gridtie, Solis","Unit",31000
+"Inverter, 8kW, Gridtie, Solis","Unit",47000
+"Inverter, 6kW, Hybrid, Deye","Unit",51000
+"Inverter, 8kW, Hybrid, Deye","Unit",67000
+"Inverter, 12kW, Hybrid, Deye","Unit",94000
+"Inverter, 16kW, Hybrid, Deye","Unit",127000
+"Inverter, 18kW, Hybrid, Deye","Unit",158000
+"Solar Panel, 620W, Monocrystalline","Pcs",6200
+"Other Materials and Consumables (Screw, Clamps, Sealant, Terminal Lugs and Others)","Lot",2200
