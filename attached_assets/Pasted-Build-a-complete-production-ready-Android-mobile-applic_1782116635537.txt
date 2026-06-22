@@ -1,0 +1,676 @@
+Build a complete, production-ready Android mobile application called "SolarWorks Zambales" 
+using Flutter (Dart). This is a professional solar PV system design and quoting tool for 
+solar installers and DIY users in the Philippines. The app must work fully offline and 
+generate professional PDF documents.
+
+════════════════════════════════════════════
+TECH STACK (use these exactly)
+════════════════════════════════════════════
+
+Framework:        Flutter (Dart), targeting Android API 26+
+State Management: Riverpod 2.x with code generation (@riverpod annotations)
+Local Database:   Drift (drift_dev) — type-safe SQLite ORM
+PDF Generation:   pdf (dart-pdf) + printing packages
+HTTP:             dio with retry interceptor (dio_retry or retry logic)
+GPS:              geolocator + permission_handler
+Maps:             flutter_map + latlong2 (OpenStreetMap, no API key)
+Compass:          flutter_compass
+CSV Parsing:      csv package
+File Share:       share_plus
+Secure Storage:   flutter_secure_storage
+Icons:            Material Symbols Rounded
+Fonts:            google_fonts (Poppins, Inter, Roboto Mono, Nunito Sans)
+Architecture:     Clean Architecture, feature-first folder structure
+Minimum SDK:      Flutter 3.x; Dart 3.x; compileSdkVersion 34
+
+════════════════════════════════════════════
+APP STRUCTURE
+════════════════════════════════════════════
+
+lib/
+├── core/
+│   ├── database/        # Drift DB schema, DAOs for price_items, settings, 
+│   │                    # appliances, boq_documents tables
+│   ├── network/         # Dio client with timeout + retry; connectivity checker
+│   ├── sync/            # GoogleSheetsSyncService: fetch CSV → parse → upsert DB
+│   ├── theme/           # AppTheme: colors, typography, shape, spacing constants
+│   └── utils/           # CurrencyFormatter, RoundingHelpers, EngCalc (all math)
+├── features/
+│   ├── home/            # HomeScreen: dashboard with quick-action cards
+│   ├── optimizer/       # OptimizerScreen: GPS + tilt/azimuth calc + map + compass
+│   ├── calculator/      # CalculatorScreen: wizard for price calculator
+│   ├── energy/          # EnergyScreen: appliance picker + load calc + recommendation
+│   ├── boq/             # BOQScreen: project form + PDF generator + history list
+│   └── settings/        # SettingsScreen: admin PIN section + price sync + USD rate
+└── main.dart
+
+════════════════════════════════════════════
+DATABASE SCHEMA (implement with Drift)
+════════════════════════════════════════════
+
+Table: price_items
+  id INTEGER PRIMARY KEY AUTOINCREMENT
+  description TEXT UNIQUE NOT NULL
+  unit TEXT NOT NULL
+  unit_cost REAL NOT NULL
+  category TEXT          -- "conductor" | "grounding" | "railing" | "protection" | "major" | "other"
+  updated_at INTEGER NOT NULL
+
+Table: settings
+  key TEXT PRIMARY KEY
+  value TEXT NOT NULL
+  -- Keys: sheets_csv_url, usd_exchange_rate (default "56.00"), admin_pin (default "0000"),
+  --       last_sync_ts, boq_daily_counter, boq_counter_date,
+  --       company_name, company_address, company_phone, company_social
+
+Table: appliances
+  id INTEGER PRIMARY KEY AUTOINCREMENT
+  name TEXT NOT NULL
+  wattage REAL NOT NULL
+  category TEXT      -- "cooling" | "kitchen" | "water" | "entertainment" | "lighting" | "other"
+  default_hours REAL DEFAULT 8
+  is_custom INTEGER DEFAULT 0
+
+Table: boq_documents
+  id INTEGER PRIMARY KEY AUTOINCREMENT
+  boq_number TEXT UNIQUE NOT NULL
+  created_at INTEGER NOT NULL
+  project_title TEXT
+  location TEXT
+  system_type TEXT       -- "HYBRID" | "GRID_TIE" | "OFF_GRID"
+  system_kw REAL
+  battery_kwh REAL
+  total_php REAL
+  pdf_path TEXT
+
+Seed the price_items table on first launch with ALL rows from this list:
+Conductor, PV, 4.0mm² | meters | 100.00
+Conductor, THHN, 5.5mm² | meters | 80.00
+Conductor, THHN, 8.0mm² | meters | 125.00
+Conductor, Battery, 35mm² | meters | 450.00
+Connector, MC4, Set | Pcs | 90.00
+Conductor, Grounding | Pcs | 145.00
+Grounding Rod, with Clamp | Pc | 1500.00
+Lug, PV Grounding | Pcs | 50.00
+Cable Tray, Aluminum | Pcs | 660.00
+Connector, PV Railings | Pcs | 80.00
+PV Clamp, End | Pcs | 50.00
+PV Clamp, Mid | Pcs | 50.00
+PV Mounting Bracket, L Foot | Pcs | 90.00
+PV Roof Railings, 2.4m | Pcs | 900.00
+Circuit Breaker, 125AT, DC | Pc | 1800.00
+Circuit Breaker, 20AT, DC | Pcs | 500.00
+Circuit Breaker, 63AT, AC | Pcs | 300.00
+Automatic Transfer Switch, 125A | Pcs | 2600.00
+Distribution Box, 15 Ways | Pcs | 1000.00
+Electrical Conduit, HDPE Spiral, 32mm | Pcs | 120.00
+Enclosure, Metal, 300x300x160mm | Pcs | 2600.00
+Surge Protection Device (SPD), AC | Pcs | 1350.00
+Surge Protection Device (SPD), DC | Pcs | 1350.00
+Battery, 5kWhr, Lithium, 6000 Cycle | Unit | 50000.00
+Battery, 10kWhr, Lithium, 6000 Cycle | Unit | 85000.00
+Battery, 15kWhr, Lithium, 6000 Cycle | Unit | 110000.00
+Inverter, 6kW, Gridtie, Solis | Unit | 31000.00
+Inverter, 8kW, Gridtie, Solis | Unit | 47000.00
+Inverter, 6kW, Hybrid, Deye | Unit | 51000.00
+Inverter, 8kW, Hybrid, Deye | Unit | 67000.00
+Inverter, 12kW, Hybrid, Deye | Unit | 94000.00
+Inverter, 16kW, Hybrid, Deye | Unit | 127000.00
+Inverter, 18kW, Hybrid, Deye | Unit | 158000.00
+Solar Panel, 620W, Monocrystalline | Pcs | 6200.00
+Other Materials and Consumables (Screw, Clamps, Sealant, Terminal Lugs and Others) | Lot | 2200.00
+
+Seed the appliances table with:
+Air Conditioner, 1.0 HP | 1000 | cooling | 9
+Air Conditioner, 1.5 HP | 1500 | cooling | 9
+Air Conditioner, 2.0 HP | 2000 | cooling | 9
+Refrigerator, Standard | 150 | kitchen | 24
+Rice Cooker | 700 | kitchen | 3
+Microwave Oven | 1000 | kitchen | 0.5
+Electric Iron | 1000 | kitchen | 0.5
+Water Pump, 0.5 HP | 375 | water | 2
+Water Pump, 1.0 HP | 750 | water | 4
+Water Heater | 1500 | water | 0.5
+LED TV, 32" | 60 | entertainment | 6
+LED TV, 43" | 80 | entertainment | 8
+LED TV, 55" | 120 | entertainment | 15
+Desktop Computer | 150 | entertainment | 8
+Laptop | 60 | entertainment | 8
+LED Bulb, 9W | 9 | lighting | 8
+Fluorescent Lamp, 20W | 20 | lighting | 8
+Electric Fan | 75 | other | 12
+Washing Machine | 500 | other | 1
+
+════════════════════════════════════════════
+CORE COMPUTATION ENGINE (lib/core/utils/eng_calc.dart)
+════════════════════════════════════════════
+
+Create a pure Dart class EngCalc with static methods implementing ALL of the following:
+
+// ── STEP 1: PANEL COUNT ──────────────────────────────────────────────────────
+static int computeNumPanels(double systemKw, double panelW) {
+  double raw = (systemKw * 1000) / (panelW * 0.8);
+  int n = raw.ceil();
+  if (n % 2 != 0) n += 1;
+  return n;
+}
+
+// ── STEP 2: PANEL DIMENSIONS (for given wattage) ─────────────────────────────
+static Map<String, double> panelDimensions(double panelW) {
+  const dims = {
+    400.0: {'width': 1.000, 'length': 1.720},
+    420.0: {'width': 1.048, 'length': 1.720},
+    540.0: {'width': 1.134, 'length': 2.094},
+    580.0: {'width': 1.134, 'length': 2.274},
+    620.0: {'width': 1.134, 'length': 2.382},
+  };
+  return dims[panelW] ?? {'width': 1.134, 'length': 2.382};
+}
+
+// ── STEP 3: MOUNTING SYSTEM ──────────────────────────────────────────────────
+static MountingResult computeMounting(int numPanels, double panelW, int numRows) {
+  int panelsPerRow = numPanels ~/ numRows;
+  double panelWidth = panelDimensions(panelW)['width']!;
+  const double railLength = 2.4;
+  const double gapM = 0.025;
+
+  double totalGap = (panelsPerRow + 1) * gapM;
+  double railsRaw = 2 * (panelsPerRow * panelWidth) / (railLength + totalGap);
+  int railsPerRow = railsRaw.ceil();
+  if (railsPerRow % 2 != 0) railsPerRow += 1;
+
+  int totalRails      = railsPerRow * numRows;
+  int lFootBrackets   = 4 * totalRails;
+  int railConnectors  = ((railsPerRow ~/ 2) - 1) * 2 * numRows;
+  int endClamps       = 4 * numRows;
+  int midClamps       = (panelsPerRow - 1) * 2 * numRows;
+
+  return MountingResult(
+    railsPerRow:     railsPerRow,
+    totalRails:      totalRails,
+    lFootBrackets:   lFootBrackets,
+    railConnectors:  railConnectors,
+    endClamps:       endClamps,
+    midClamps:       midClamps,
+    cableTrayPcs:    2,
+    groundingCondPcs: 20,
+  );
+}
+
+// ── STEP 4: ELECTRICAL SIZING ─────────────────────────────────────────────────
+static ElecResult computeElectrical(double systemKw, double panelW, 
+                                     String systemType, int numPanels) {
+  // Panel ISC lookup
+  const iscMap = {400.0: 10.10, 420.0: 10.50, 540.0: 13.13, 580.0: 13.40, 620.0: 13.67};
+  double panelIsc = iscMap[panelW] ?? 13.67;
+
+  // Max strings by inverter
+  int maxStrings = inverterMaxStrings(systemKw, systemType);
+
+  // Wire lengths
+  int pvWireM = (((numPanels * 2.5) + 20) * 2 / 10).ceil() * 10;
+
+  // AC current
+  double invAcA = (systemKw * 1000) / (230 * 0.9);
+
+  // DC String CB: 125% × 125% of Isc, next standard size
+  double dcCbMin = panelIsc * 1.25 * 1.25;
+  int dcCbSize   = nextDcCbSize(dcCbMin);        // standard: 15,20,25,30,40,50 AT DC
+  int dcCbQty    = maxStrings;
+
+  // AC CB: 125% of output current, next standard size
+  double acCbMin = invAcA * 1.25;
+  int acCbSize   = nextAcCbSize(acCbMin);         // standard: 20,30,40,50,63,80,100 AT AC
+  int acCbQty    = 2;
+
+  int atsQty = (systemType == "HYBRID" || systemType == "OFF_GRID") ? 1 : 0;
+
+  return ElecResult(
+    pvWireLengthM:    pvWireM,
+    thhn55LengthM:    20,
+    thhn80LengthM:    75,
+    battCableLengthM: 4,
+    mc4Sets:          maxStrings * 2,
+    groundingRods:    1,
+    pvGroundingLugs:  2,
+    mainDcCbQty:      1,       // always 125AT DC
+    dcStringCbQty:    dcCbQty,
+    acCbQty:          acCbQty,
+    atsQty:           atsQty,
+    distBoxQty:       2,
+    conduitQty:       20,
+    enclosureQty:     1,
+    spdAcQty:         1,
+    spdDcQty:         2,
+  );
+}
+
+static int inverterMaxStrings(double systemKw, String type) {
+  if (type == "HYBRID") {
+    if (systemKw <= 6) return 2;
+    return 4;   // 8kW and above Deye
+  }
+  return 2;  // Grid-tie and off-grid default
+}
+
+// ── STEP 5: COST GROUPS ───────────────────────────────────────────────────────
+static BOQResult computeBOQ({
+  required double systemKw,
+  required double panelW,
+  required String systemType,
+  required double batteryKwh,
+  required int numRows,
+  required Map<String, double> prices,   // from DB, keyed by description
+}) {
+  int numPanels = computeNumPanels(systemKw, panelW);
+  MountingResult m = computeMounting(numPanels, panelW, numRows);
+  ElecResult e = computeElectrical(systemKw, panelW, systemType, numPanels);
+
+  // Group 1: Conductors
+  double g1 = (e.pvWireLengthM    * prices["Conductor, PV, 4.0mm²"]!)
+            + (e.thhn55LengthM    * prices["Conductor, THHN, 5.5mm²"]!)
+            + (e.thhn80LengthM    * prices["Conductor, THHN, 8.0mm²"]!)
+            + (e.battCableLengthM * prices["Conductor, Battery, 35mm²"]!)
+            + (e.mc4Sets          * prices["Connector, MC4, Set"]!);
+
+  // Group 2: Grounding
+  double g2 = (m.groundingCondPcs * prices["Conductor, Grounding"]!)
+            + (e.groundingRods    * prices["Grounding Rod, with Clamp"]!)
+            + (e.pvGroundingLugs  * prices["Lug, PV Grounding"]!);
+
+  // Group 3: Railing
+  double g3 = (m.cableTrayPcs    * prices["Cable Tray, Aluminum"]!)
+            + (m.railConnectors   * prices["Connector, PV Railings"]!)
+            + (m.endClamps        * prices["PV Clamp, End"]!)
+            + (m.midClamps        * prices["PV Clamp, Mid"]!)
+            + (m.lFootBrackets    * prices["PV Mounting Bracket, L Foot"]!)
+            + (m.totalRails       * prices["PV Roof Railings, 2.4m"]!);
+
+  // Group 4: Protection
+  double g4 = (e.mainDcCbQty   * prices["Circuit Breaker, 125AT, DC"]!)
+            + (e.dcStringCbQty * prices["Circuit Breaker, 20AT, DC"]!)
+            + (e.acCbQty       * prices["Circuit Breaker, 63AT, AC"]!)
+            + (e.atsQty        * prices["Automatic Transfer Switch, 125A"]!)
+            + (e.distBoxQty    * prices["Distribution Box, 15 Ways"]!)
+            + (e.conduitQty    * prices["Electrical Conduit, HDPE Spiral, 32mm"]!)
+            + (e.enclosureQty  * prices["Enclosure, Metal, 300x300x160mm"]!)
+            + (e.spdAcQty      * prices["Surge Protection Device (SPD), AC"]!)
+            + (e.spdDcQty      * prices["Surge Protection Device (SPD), DC"]!);
+
+  // Major components
+  double panelCost    = numPanels * prices["Solar Panel, 620W, Monocrystalline"]!;
+  double inverterCost = prices[_inverterKey(systemKw, systemType)]!;
+  double batteryCost  = batteryKwh > 0 
+                        ? prices[_batteryKey(batteryKwh)]! * _batteryUnits(batteryKwh)
+                        : 0;
+  double otherCost    = prices["Other Materials and Consumables (Screw, Clamps, Sealant, Terminal Lugs and Others)"]!;
+
+  double materialSub  = panelCost + inverterCost + batteryCost + g1 + g2 + g3 + g4 + otherCost;
+  double mobilization = 5000.0;
+  double installation = (materialSub + mobilization) * 0.30;
+  double total        = materialSub + mobilization + installation;
+
+  return BOQResult(
+    numPanels: numPanels, mounting: m, electrical: e,
+    panelCost: panelCost, inverterCost: inverterCost, batteryCost: batteryCost,
+    group1: g1, group2: g2, group3: g3, group4: g4, otherCost: otherCost,
+    materialSubtotal: materialSub, mobilization: mobilization,
+    installation: installation, total: total,
+  );
+}
+
+// ── OPTIMIZER COMPUTATION ─────────────────────────────────────────────────────
+static double optimalTilt(double latitude, String mode) {
+  double lat = latitude.abs();
+  if (mode == "year_round") return double.parse((0.76 * lat + 3.1).toStringAsFixed(1));
+  if (mode == "summer")     return [lat - 15.0, 5.0].reduce((a,b) => a > b ? a : b);
+  return double.parse((lat + 15.0).toStringAsFixed(1));
+}
+
+static double compassBearing(double magDeclination) => 180.0 - magDeclination;
+
+// Magnetic declination approximation for Philippines:
+// Linear interpolation over embedded province lookup table.
+// Default for Zambales (~15.5°N, 120°E): +0.7°
+static double magDeclination(double lat, double lng) {
+  // Simplified: return 0.7 for Philippines range (10°N–22°N, 117°E–127°E)
+  // In production: use NOAA WMM polynomial or embedded lookup table
+  return 0.7;
+}
+
+// ── ENERGY CALCULATOR ────────────────────────────────────────────────────────
+static EnergyResult computeEnergy(List<ApplianceLoad> loads, double psh) {
+  double totalWh = loads.fold(0, (s, l) => s + l.wattage * l.qty * l.hoursPerDay);
+  double totalKwh = totalWh / 1000;
+  double reqKwp = totalKwh / (psh * 0.85 * 0.80);
+  const sizes = [3.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 18.0];
+  double recKwp = sizes.firstWhere((s) => s >= reqKwp, orElse: () => 20.0);
+
+  Map<String, double> battRec = {};
+  for (var days in [0.5, 1.0, 2.0]) {
+    double raw = totalKwh * days / 0.80;
+    const bSizes = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0];
+    battRec['${days}day'] = bSizes.firstWhere((b) => b >= raw, orElse: () => 30.0);
+  }
+  return EnergyResult(
+    dailyKwh: totalKwh,
+    recommendedKwp: recKwp,
+    batteryRecs: battRec,
+    estimatedGenKwh: recKwp * psh * 0.85,
+  );
+}
+
+════════════════════════════════════════════
+PDF GENERATION (lib/features/boq/pdf_generator.dart)
+════════════════════════════════════════════
+
+Use the dart-pdf (pdf) package to generate a PDF exactly matching this structure:
+
+PAGE LAYOUT:
+- A4 portrait, 20mm margins all sides
+- Use pw.Document()
+
+HEADER (orange background #E87C27):
+- Left: orange starburst SVG logo (embed as MemoryImage or draw with pdf shapes)
+- Center: 
+    "SolarWorks Zambales" — white, Poppins Bold 18pt
+    "Brgy. Sto. Rosario, Iba, Zambales | +63 912 458 2437 | facebook.com/SolarWorksZambales"
+    — white, regular 9pt
+- Below header: full-width orange bar with centered text
+    "PHOTO VOLTAIC SYSTEM BILL OF QUANTITIES" — white, Poppins SemiBold 11pt
+
+INFO SECTION:
+- "BOQ #: 202606220001" left-aligned, orange text, 9pt
+- "Date: 6/22/2026" below it
+
+SYSTEM SPECS SECTION (label "SYSTEM SPECIFICATIONS" in orange bold):
+- "Project Title: Supply, Delivery, Installation, Configuration, Testing and
+   Commissioning of [X]kWP [Type] PV System for [Location]"
+   — blue hyperlink style for the dynamic parts
+- "Location: [value]"
+- Two-column row: "System Type: [Hybrid]" | "System Size: [X]kWp"
+- Two-column row: "Backup Battery Capacity: [X] kWh" | "Estimated Daily Generation: [X]kWh"
+
+ITEM TABLE:
+Headers row: black background, white text, 9pt, columns:
+  # | DESCRIPTION | QUANTITY | UNIT | UNIT COST | AMOUNT (PHP)
+Alternating row colors: white / light-gray (#F5F5F7)
+All amounts right-aligned in Roboto Mono
+Currency format: PHP amounts with comma separators, 2 decimal places
+
+TOTALS ROW:
+- "TOTAL PROJECT COST (PHP)" spanning left columns — orange background, white bold text
+- Total amount right-aligned — orange background, white Roboto Mono Bold
+
+"VAT EXCLUSIVE" — small italic below total
+
+LOAD SUMMARY SECTION (if appliance data present):
+- Header "LOAD SUMMARY" in orange bold
+- Bullet list of appliances: "• ACU 1.0 HP × 2 @ 9h/day = 13,500 Wh"
+- "Total Daily Consumption: XX.X kWh" — bold
+
+GRID DIVIDER BETWEEN WARRANTY AND NOTES
+
+WARRANTY SECTION (left half):
+- "WARRANTY" — orange bold header
+- Bullet list of warranty terms (as specified in F4)
+
+NOTES SECTION (right half):
+- "NOTES" — orange bold header  
+- Bullet list of notes (as specified in F4)
+
+FOOTER:
+- Light separator line
+- "This is a system-generated document from SolarWorks Zambales App" — gray 7pt
+
+SAVE PATH: Android: app-specific external files directory (Environment.DIRECTORY_DOWNLOADS)
+After save: trigger share_plus SharePlus.share() with the file path
+
+════════════════════════════════════════════
+GOOGLE SHEETS SYNC SERVICE (lib/core/sync/)
+════════════════════════════════════════════
+
+class GoogleSheetsSyncService:
+
+Future<SyncResult> sync() async:
+  1. Read sheets_csv_url from settings DB
+  2. If empty → return SyncResult.noUrlConfigured()
+  3. GET request via Dio (timeout: 10 seconds)
+  4. On success:
+     a. Parse CSV (skip header row)
+     b. For each row: UPSERT price_items by description
+     c. Save current Unix timestamp to settings['last_sync_ts']
+     d. Return SyncResult.success(rowCount)
+  5. On network error / timeout:
+     b. Return SyncResult.offline(lastSyncTs)
+
+Call sync() in:
+  - App startup (main.dart after DB init)
+  - Each time app returns to foreground (AppLifecycleListener)
+  - "Sync Now" button in Settings
+
+════════════════════════════════════════════
+SCREEN SPECIFICATIONS
+════════════════════════════════════════════
+
+── HOME SCREEN ─────────────────────────────────────────────────────────────────
+- Orange gradient app bar: "SolarWorks Zambales" logo + name
+- Sync status chip: green "✓ Prices Updated" or amber "⚠ Offline Cache"
+- 2×2 grid of large action cards (rounded-16, shadow):
+    [☀️ Panel Optimizer] [🧮 Price Calculator]
+    [⚡ Energy Calculator] [📄 Generate BOQ]
+- "Recent BOQs" section: list tiles showing BOQ#, date, system size, total
+- Tap a recent BOQ → open PDF viewer (if pdf_path exists) or recreate
+
+── OPTIMIZER SCREEN ────────────────────────────────────────────────────────────
+- Full-height flutter_map with OSM tiles, draggable marker
+- GPS auto-locate button (top-right)
+- Manual coordinate input: two text fields (Lat / Long)
+- Segmented button: Year-round | Summer | Winter
+- Bottom sheet (collapsible, shows on first load):
+    • Animated SVG compass with orange arrow at computed bearing
+    • Result cards: "Tilt Angle: XX°" | "Face Direction: XXX° magnetic"
+    • "True South is 180°. Magnetic declination: ±X.X° at this location."
+    • "Peak Sun Hours: X.X h/day (Zambales region)"
+    • Share text button
+
+── PRICE CALCULATOR SCREEN ─────────────────────────────────────────────────────
+Section 1 — System Configuration:
+  - Segmented toggle: Hybrid | Grid-Tie | Off-Grid
+  - Slider + number input: System Size (1–30 kW, step 0.5)
+  - Dropdown: Panel Capacity (400W, 420W, 540W, 580W, 620W)
+  - Dropdown (Hybrid/Off-Grid only): Battery (None, 5kWh, 10kWh, 15kWh, 20kWh, 25kWh, 30kWh)
+  - Toggle at top-right: PHP | USD
+
+Section 2 — Live Results (updates as user changes inputs):
+  - "Inverter selected: [X]kW [Brand] [Type]" — auto-selected info chip
+  - "Panels: [N] × [X]W" chip
+  - Expandable "View Material Breakdown" card:
+    Sub-rows for each group and component with qty × unit cost = amount
+  - Summary card (large, prominent):
+    Material Subtotal:  ₱XXX,XXX.XX
+    Mobilization:       ₱  5,000.00
+    Installation (30%): ₱ XX,XXX.XX
+    ───────────────────────────────
+    TOTAL:              ₱XXX,XXX.XX  (large orange text, Roboto Mono Bold)
+    VAT Exclusive
+  - Large orange CTA: "Generate BOQ PDF"
+
+── ENERGY CALCULATOR SCREEN ────────────────────────────────────────────────────
+- Search bar for appliance filter
+- Category filter chips (All | Cooling | Kitchen | Water | Entertainment | Lighting | Other)
+- Scrollable appliance grid cards (2-column):
+    Each card: icon, name, wattage, "+ Add" button
+- "Added Appliances" section:
+    Expandable list of added items with:
+    - Quantity stepper (−  N  +)
+    - Hours/day stepper (slider or stepper)
+    - Swipe-to-delete
+- Sticky bottom bar: "Total: XX.X kWh/day" + "Get Recommendation" button
+- Recommendation screen (new page or bottom sheet):
+    • "Recommended System: [X] kWp"
+    • Battery options card (three rows: No battery | 0.5-day backup | 1-day backup | 2-day backup)
+    • "Estimated daily generation: X.X kWh"
+    • "Use this sizing →" button → pre-fills Price Calculator
+
+── BOQ GENERATOR SCREEN ────────────────────────────────────────────────────────
+Tab 1: NEW BOQ
+  - Project Title text field (pre-filled if from Calculator/Energy)
+  - Location text field
+  - System parameters (read-only if pre-filled, editable if manual)
+  - "Include Load Summary" toggle (if energy data available)
+  - Preview card (simplified BOQ preview, not full PDF)
+  - "Generate PDF" large orange button
+  - On success: show snackbar "BOQ saved!" + "Share" action
+
+Tab 2: BOQ HISTORY
+  - List of past BOQs from DB
+  - Tiles: BOQ#, date, system desc, total
+  - Tap → open PDF (if file exists) or show "File not found, regenerate?" dialog
+  - Long-press → delete
+
+── SETTINGS SCREEN ─────────────────────────────────────────────────────────────
+General section:
+  - "USD Exchange Rate: ₱XX.XX" → tap to edit
+  - "Last Price Sync: [timestamp] ([N] items)"
+  - "Sync Now" button
+
+Admin section (tap to unlock with PIN dialog — 4-digit number pad):
+  - Google Sheets CSV URL — text field + "Test & Save" button
+  - Company Name (for PDF header)
+  - Company Address
+  - Company Phone
+  - Company Social / Website
+  - Change Admin PIN
+  - "Reset Prices to Default" (confirms → re-seeds DB with embedded defaults)
+
+════════════════════════════════════════════
+APP THEME (lib/core/theme/app_theme.dart)
+════════════════════════════════════════════
+
+Use Material 3 (useMaterial3: true) with custom ColorScheme:
+
+Primary:         Color(0xFFE87C27)   // SolarWorks orange
+OnPrimary:       Color(0xFFFFFFFF)
+Secondary:       Color(0xFF1A1F36)   // Dark navy
+Background:      Color(0xFFF5F5F7)   // Apple-style light gray
+Surface:         Color(0xFFFFFFFF)
+OnSurface:       Color(0xFF1C1C1E)
+SurfaceVariant:  Color(0xFFF0F0F0)
+Error:           Color(0xFFFF3B30)
+Success (custom): Color(0xFF34C759)
+
+Text Styles:
+  displayLarge:  Poppins Bold 32
+  titleLarge:    Poppins SemiBold 22
+  titleMedium:   Poppins Medium 18
+  bodyLarge:     Inter Regular 16
+  bodyMedium:    Inter Regular 14
+  labelSmall:    Nunito Sans Medium 11
+  moneyLarge:    Roboto Mono Bold 24
+  moneyMedium:   Roboto Mono Regular 14
+
+Shapes:
+  card:          RoundedRectangleBorder(radius: 16)
+  button:        RoundedRectangleBorder(radius: 12)
+  inputField:    RoundedRectangleBorder(radius: 10)
+  chip:          RoundedRectangleBorder(radius: 8)
+
+Elevation:
+  card:   BoxShadow(color: 0x10000000, blurRadius: 12, offset: Offset(0, 4))
+  fab:    BoxShadow(color: 0x40E87C27, blurRadius: 16, offset: Offset(0, 6))
+
+════════════════════════════════════════════
+CURRENCY TOGGLE LOGIC
+════════════════════════════════════════════
+
+- Global currency state managed by Riverpod StateProvider<String> currencyProvider ('PHP' | 'USD')
+- Global exchange rate from Riverpod StateProvider<double> usdRateProvider (from settings DB)
+- CurrencyFormatter.format(double amountPhp, String currency, double usdRate):
+    if currency == 'PHP': return '₱${formatWithCommas(amountPhp)}'
+    else: return '\$${formatWithCommas(amountPhp / usdRate)}'
+- PHP/USD toggle appears as a small labeled switch in the top-right of Calculator and BOQ screens
+- When toggled, all displayed amounts immediately update (all amounts stored as PHP internally)
+- PDF always generated in PHP (the "currency" toggle is for screen display only)
+- Show "Exchange Rate: 1 USD = ₱XX.XX" subtitle under toggle
+
+════════════════════════════════════════════
+OFFLINE DETECTION
+════════════════════════════════════════════
+
+Use connectivity_plus package:
+- On launch: check connectivity
+- Show persistent amber banner "⚠ Offline — Using cached prices from [date]" 
+  at top of HomeScreen when no internet
+- Banner disappears automatically when connectivity restored and sync succeeds
+- All computation and PDF generation proceeds normally regardless of connectivity
+
+════════════════════════════════════════════
+BOQ NUMBER GENERATION
+════════════════════════════════════════════
+
+Format: YYYYMMDDxxxx (e.g., 202606220001)
+- Read today's date as YYYYMMDD string
+- Read settings['boq_counter_date'] and settings['boq_daily_counter']
+- If boq_counter_date == today → increment boq_daily_counter
+- Else → reset boq_daily_counter to 1, update boq_counter_date
+- BOQ number = YYYYMMDD + zero-padded 4-digit counter
+- Save counter back to settings immediately
+
+════════════════════════════════════════════
+PERMISSIONS (AndroidManifest.xml)
+════════════════════════════════════════════
+
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+<uses-permission android:name="android.permission.VIBRATE"/>
+
+Use permission_handler to request location permission at runtime before GPS use.
+
+════════════════════════════════════════════
+VALIDATION REFERENCE (must pass in unit tests)
+════════════════════════════════════════════
+
+For 6kW Hybrid, 620W panels, 2 rows, 15kWh battery, all default prices:
+  numPanels              = 12
+  railsPerRow            = 6
+  totalRails             = 12
+  lFootBrackets          = 48
+  railConnectors         = 8
+  endClamps              = 8
+  midClamps              = 20
+  group1 (Conductors)    ≈ 19,045
+  group2 (Grounding)     ≈  4,500
+  group3 (Railing)       ≈ 18,480
+  group4 (Protection)    ≈ 17,050
+  Panel cost             = 74,400  (12 × 6,200)
+  Inverter cost          = 51,000
+  Battery cost           = 110,000 (1 × 110,000)
+  Other consumables      =  2,200
+  Material subtotal      ≈ 296,675
+  Mobilization           =  5,000
+  Installation (30%)     ≈ 90,502.50
+  TOTAL PROJECT COST     ≈ 392,177.50
+
+════════════════════════════════════════════
+ADDITIONAL NOTES FOR BUILDER
+════════════════════════════════════════════
+
+1. The app must work FULLY offline for all features EXCEPT syncing new prices.
+2. All financial calculations must use PHP internally; currency display is cosmetic only.
+3. The PDF output must closely match the sample shown (described in detail above).
+4. The engineering formulas (panel count, mounting, electrical) must be EXACT as documented—
+   they must pass the validation reference numbers above.
+5. Admin PIN is stored via flutter_secure_storage, not plaintext in SQLite.
+6. The Google Sheets URL is stored in settings (plaintext is acceptable since it's 
+   a publicly published CSV URL with no auth tokens).
+7. Use river_pod code generation (@riverpod) for all providers.
+8. Write unit tests for EngCalc static methods to validate against the reference numbers.
+9. The app visual design must feel premium — reference Apple's HIG for spacing, 
+   typography weight contrast, and motion. No flat, cluttered, or generic Material 
+   out-of-the-box appearance.
+10. The company logo should be a programmatically drawn orange starburst SVG matching
+    the SolarWorks Zambales style (no external image needed; draw with Canvas API).
