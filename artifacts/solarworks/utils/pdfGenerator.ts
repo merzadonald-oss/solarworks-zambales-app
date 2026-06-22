@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { BOQResult } from "./engCalc";
 import { ApplianceLoad } from "./engCalc";
 import { EngCalc } from "./engCalc";
+import LOGO_DATA_URI from "./logoBase64";
 
 export interface PDFParams {
   boqNumber: string;
@@ -201,10 +202,8 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
 <!-- ═══ HEADER ═══ -->
 <table width="100%" style="background:#E87C27;border-radius:4px 4px 0 0;">
   <tr>
-    <td width="72" style="padding:10px 8px 10px 14px;text-align:center;vertical-align:middle;">
-      <svg width="52" height="52" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <polygon points="50,5 61,35 95,35 67,57 79,91 50,70 21,91 33,57 5,35 39,35" fill="white" opacity="0.95"/>
-      </svg>
+    <td width="80" style="padding:6px 8px 6px 10px;text-align:center;vertical-align:middle;">
+      <img src="${LOGO_DATA_URI}" width="68" height="68" style="display:block;object-fit:contain;" />
     </td>
     <td style="text-align:center;padding:10px 14px 10px 0;vertical-align:middle;">
       <div style="color:white;font-weight:800;font-size:18pt;letter-spacing:0.3px;">${companyName || "SolarWorks Zambales"}</div>
