@@ -64,10 +64,12 @@ export interface EnergyResult {
 
 export class EngCalc {
   static computeNumPanels(systemKw: number, panelW: number): number {
-    const raw = (systemKw * 1000) / (panelW * 0.8);
-    let n = Math.ceil(raw);
-    if (n % 2 !== 0) n += 1;
-    return n;
+    // Floor so panel array never exceeds inverter rated power
+    // (panels × panelW × 0.8 ≤ inverterKw × 1000)
+    const raw = Math.floor((systemKw * 1000) / (panelW * 0.8));
+    // Round DOWN to nearest even (panels wired in strings of 2)
+    const n = raw % 2 !== 0 ? raw - 1 : raw;
+    return Math.max(n, 2);
   }
 
   static panelDimensions(panelW: number): { width: number; length: number } {
