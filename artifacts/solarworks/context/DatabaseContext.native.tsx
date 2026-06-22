@@ -146,6 +146,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           [key, val]
         );
       }
+      // Migrate old default PIN
+      await database.runAsync(
+        "UPDATE settings SET value = '209920' WHERE key = 'admin_pin' AND value = '0000'"
+      );
 
       if (mounted) {
         setDb(database);

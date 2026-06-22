@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Modal, Platform, ActivityIndicator,
+  TextInput, Alert, Modal, Platform, ActivityIndicator, Share,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +11,7 @@ import * as SecureStore from "expo-secure-store";
 import { useColors } from "@/hooks/useColors";
 import { useDatabase } from "@/context/DatabaseContext";
 import { useApp } from "@/context/AppContext";
+import { SEED_PRICE_ITEMS } from "@/constants/seeds";
 
 const PIN_KEY = "solarworks_admin_pin";
 const PIN_LENGTH = 6;
@@ -36,6 +37,13 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const [savingAdmin, setSavingAdmin] = useState(false);
 
+  // Change PIN state
+  const [showChangePinModal, setShowChangePinModal] = useState(false);
+  const [changePinStep, setChangePinStep] = useState<"enter" | "confirm">("enter");
+  const [newPinInput, setNewPinInput] = useState("");
+  const [confirmPinInput, setConfirmPinInput] = useState("");
+  const [changePinError, setChangePinError] = useState(false);
+
   useEffect(() => {
     if (!isReady) return;
     (async () => {
@@ -52,6 +60,17 @@ export default function SettingsScreen() {
   }, [isReady]);
 
   useEffect(() => { setUsdInput(String(usdRate)); }, [usdRate]);
+
+  // Migrate old default PIN in SecureStore (native only)
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      SecureStore.getItemAsync(PIN_KEY).then((pin) => {
+        if (pin === "0000") {
+          SecureStore.setItemAsync(PIN_KEY, "209920");
+        }
+      });
+    }
+  }, []);
 
   const verifyPin = async () => {
     const stored = Platform.OS !== "web"
@@ -92,6 +111,63 @@ export default function SettingsScreen() {
     setSavingAdmin(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Saved", "Admin settings saved successfully.");
+  };
+
+  const handleExportCSV = async () => {
+    const header = "Description,Unit,Unit Cost (PHP)";
+    const rows = SEED_PRICE_ITEMS.map(
+      (p) => `"${p.description}","${p.unit}",${p.unit_cost}`
+    );
+    const csv = [header, ...rows].join("\n");
+
+    if (Platform.OS === "web") {
+      try {
+        await navigator.clipboard.writeText(csv);
+        Alert.alert("Copied!", "Price list CSV copied to clipboard.\n\nPaste it into your Google Sheet (columns: Description, Unit, Unit Cost).");
+      } catch {
+        Alert.alert("CSV Data", csv.slice(0, 400) + "\n\n…open console to copy full CSV");
+        console.log("FULL CSV:\n" + csv);
+      }
+    } else {
+      await Share.share({
+        title: "SolarWorks Price List",
+        message: csv,
+      });
+    }
+  };
+
+  const handleChangePinOpen = () => {
+    setNewPinInput("");
+    setConfirmPinInput("");
+    setChangePinStep("enter");
+    setChangePinError(false);
+    setShowChangePinModal(true);
+  };
+
+  const handleChangePinNext = () => {
+    if (newPinInput.length < PIN_LENGTH) return;
+    setChangePinStep("confirm");
+    setConfirmPinInput("");
+    setChangePinError(false);
+  };
+
+  const handleChangePinSave = async () => {
+    if (confirmPinInput !== newPinInput) {
+      setChangePinError(true);
+      setConfirmPinInput("");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    if (Platform.OS !== "web") {
+      await SecureStore.setItemAsync(PIN_KEY, newPinInput);
+    } else {
+      await setSetting("admin_pin", newPinInput);
+    }
+    setShowChangePinModal(false);
+    setNewPinInput("");
+    setConfirmPinInput("");
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("PIN Changed", "Admin PIN updated successfully.");
   };
 
   const handleResetPrices = () => {
@@ -243,6 +319,18 @@ export default function SettingsScreen() {
 
             <View style={[styles.divider, { backgroundColor: colors.border, marginVertical: 12 }]} />
 
+            <TouchableOpacity style={[styles.actionRow, { borderColor: colors.primary + "40" }]} onPress={handleChangePinOpen}>
+              <Feather name="key" size={16} color={colors.primary} />
+              <Text style={[styles.actionText, { color: colors.primary }]}>Change Admin PIN</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.actionRow, { borderColor: colors.primary + "40", marginTop: 8 }]} onPress={handleExportCSV}>
+              <Feather name="download" size={16} color={colors.primary} />
+              <Text style={[styles.actionText, { color: colors.primary }]}>Export Price List as CSV</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border, marginVertical: 12 }]} />
+
             <TouchableOpacity style={[styles.dangerRow, { borderColor: colors.destructive + "40" }]} onPress={handleResetPrices}>
               <Feather name="refresh-cw" size={16} color={colors.destructive} />
               <Text style={[styles.dangerText, { color: colors.destructive }]}>Reset Prices to Factory Default</Text>
@@ -255,6 +343,127 @@ export default function SettingsScreen() {
           <Text style={[styles.versionText, { color: colors.mutedForeground }]}>Offline-capable solar PV design tool</Text>
         </View>
       </ScrollView>
+
+      {/* CHANGE PIN MODAL */}
+      <Modal
+        visible={showChangePinModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { setShowChangePinModal(false); setNewPinInput(""); setConfirmPinInput(""); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.pinModal, { backgroundColor: colors.card }]}>
+            <View style={[styles.pinIconBg, { backgroundColor: colors.orangeLight }]}>
+              <Feather name="key" size={28} color={colors.primary} />
+            </View>
+            <Text style={[styles.pinTitle, { color: colors.foreground }]}>
+              {changePinStep === "enter" ? "New PIN" : "Confirm PIN"}
+            </Text>
+            <Text style={[styles.pinSubtitle, { color: colors.mutedForeground }]}>
+              {changePinStep === "enter" ? "Enter a new 6-digit PIN" : "Re-enter the new PIN to confirm"}
+            </Text>
+
+            <View style={styles.pinDots}>
+              {Array.from({ length: PIN_LENGTH }).map((_, i) => {
+                const val = changePinStep === "enter" ? newPinInput : confirmPinInput;
+                return (
+                  <View
+                    key={i}
+                    style={[
+                      styles.pinDot,
+                      {
+                        backgroundColor: i < val.length
+                          ? (changePinError ? colors.destructive : colors.primary)
+                          : "transparent",
+                        borderColor: i < val.length
+                          ? (changePinError ? colors.destructive : colors.primary)
+                          : colors.border,
+                      }
+                    ]}
+                  />
+                );
+              })}
+            </View>
+
+            {changePinError && (
+              <View style={[styles.pinErrorBadge, { backgroundColor: colors.destructive + "15" }]}>
+                <Feather name="alert-circle" size={12} color={colors.destructive} />
+                <Text style={[styles.pinError, { color: colors.destructive }]}>PINs do not match. Try again.</Text>
+              </View>
+            )}
+
+            <View style={styles.numpad}>
+              {["1","2","3","4","5","6","7","8","9"].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[styles.numKey, { backgroundColor: colors.muted }]}
+                  onPress={() => {
+                    if (changePinStep === "enter") {
+                      if (newPinInput.length < PIN_LENGTH) setNewPinInput((p) => p + n);
+                    } else {
+                      if (confirmPinInput.length < PIN_LENGTH) setConfirmPinInput((p) => p + n);
+                    }
+                    setChangePinError(false);
+                  }}
+                >
+                  <Text style={[styles.numText, { color: colors.foreground }]}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.numKey, { backgroundColor: colors.muted }]}
+                onPress={() => { setShowChangePinModal(false); setNewPinInput(""); setConfirmPinInput(""); }}
+              >
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.numKey, { backgroundColor: colors.muted }]}
+                onPress={() => {
+                  if (changePinStep === "enter") {
+                    if (newPinInput.length < PIN_LENGTH) setNewPinInput((p) => p + "0");
+                  } else {
+                    if (confirmPinInput.length < PIN_LENGTH) setConfirmPinInput((p) => p + "0");
+                  }
+                  setChangePinError(false);
+                }}
+              >
+                <Text style={[styles.numText, { color: colors.foreground }]}>0</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.numKey, { backgroundColor: colors.muted }]}
+                onPress={() => {
+                  if (changePinStep === "enter") setNewPinInput((p) => p.slice(0, -1));
+                  else setConfirmPinInput((p) => p.slice(0, -1));
+                  setChangePinError(false);
+                }}
+              >
+                <Feather name="delete" size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            {changePinStep === "enter" ? (
+              <TouchableOpacity
+                style={[styles.pinConfirm, { backgroundColor: newPinInput.length === PIN_LENGTH ? colors.primary : colors.muted }]}
+                onPress={handleChangePinNext}
+                disabled={newPinInput.length < PIN_LENGTH}
+              >
+                <Text style={[styles.pinConfirmText, { color: newPinInput.length === PIN_LENGTH ? "#fff" : colors.mutedForeground }]}>
+                  Next
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.pinConfirm, { backgroundColor: confirmPinInput.length === PIN_LENGTH ? colors.primary : colors.muted }]}
+                onPress={handleChangePinSave}
+                disabled={confirmPinInput.length < PIN_LENGTH}
+              >
+                <Text style={[styles.pinConfirmText, { color: confirmPinInput.length === PIN_LENGTH ? "#fff" : colors.mutedForeground }]}>
+                  Save PIN
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* PIN MODAL */}
       <Modal
@@ -401,6 +610,8 @@ const styles = StyleSheet.create({
   saveBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   dangerRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14 },
   dangerText: { fontSize: 14, fontWeight: "600" },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14 },
+  actionText: { fontSize: 14, fontWeight: "600" },
   versionCard: {
     borderRadius: 16, padding: 16, alignItems: "center", gap: 4, marginTop: 20,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },

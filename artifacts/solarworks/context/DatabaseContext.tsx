@@ -113,6 +113,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       for (const [k, v] of Object.entries(DEFAULTS)) {
         if (!(k in loadedSettings)) loadedSettings[k] = v;
       }
+      // Migrate old default PIN
+      if (loadedSettings["admin_pin"] === "0000") {
+        loadedSettings["admin_pin"] = "209920";
+      }
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(loadedSettings));
 
       setPrices(loadedPrices);
