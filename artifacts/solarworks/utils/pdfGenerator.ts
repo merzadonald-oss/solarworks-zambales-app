@@ -1,6 +1,4 @@
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system";
+import { Platform } from "react-native";
 import { BOQResult } from "./engCalc";
 import { ApplianceLoad } from "./engCalc";
 import { EngCalc } from "./engCalc";
@@ -192,6 +190,10 @@ export async function generateBOQPDF(params: PDFParams): Promise<string | null> 
   body { font-family: Arial, sans-serif; font-size: 9pt; color: #1A1F36; padding: 18px; }
   table { border-collapse: collapse; }
   td, th { vertical-align: middle; }
+  @media print {
+    body { padding: 10px; }
+    @page { margin: 12mm; size: A4 portrait; }
+  }
 </style>
 </head>
 <body>
@@ -298,7 +300,41 @@ ${loadSummaryHtml}
 </body>
 </html>`;
 
+  // ── Web: open in new tab and trigger browser print-to-PDF ─────────────────
+  if (Platform.OS === "web") {
+    try {
+      const newWin = window.open("", "_blank");
+      if (!newWin) {
+        // Popup blocked — fallback: create a blob URL and navigate
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        return url;
+      }
+      newWin.document.open();
+      newWin.document.write(html);
+      newWin.document.close();
+      // Wait for fonts / layout then open print dialog
+      newWin.addEventListener("load", () => {
+        setTimeout(() => newWin.print(), 300);
+      });
+      // Safety fallback if load event already fired
+      setTimeout(() => {
+        try { newWin.print(); } catch {}
+      }, 900);
+      return boqNumber;
+    } catch (e) {
+      console.error("PDF web error:", e);
+      return null;
+    }
+  }
+
+  // ── Native: expo-print → save to filesystem → share ───────────────────────
   try {
+    const Print = await import("expo-print");
+    const Sharing = await import("expo-sharing");
+    const FileSystem = await import("expo-file-system");
+
     const { uri } = await Print.printToFileAsync({ html, base64: false });
     const destUri = `${FileSystem.documentDirectory}BOQ_${boqNumber}.pdf`;
     await FileSystem.copyAsync({ from: uri, to: destUri });
@@ -308,7 +344,7 @@ ${loadSummaryHtml}
     }
     return destUri;
   } catch (e) {
-    console.error("PDF generation error:", e);
+    console.error("PDF native error:", e);
     return null;
   }
 }
