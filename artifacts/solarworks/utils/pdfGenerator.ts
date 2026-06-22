@@ -332,7 +332,7 @@ ${loadSummaryHtml}
   try {
     const Print = await import("expo-print");
     const Sharing = await import("expo-sharing");
-    const FileSystem = await import("expo-file-system");
+    const FileSystem = await import("expo-file-system/legacy");
 
     const { uri } = await Print.printToFileAsync({ html, base64: false });
     const destUri = `${FileSystem.documentDirectory}BOQ_${boqNumber}.pdf`;
