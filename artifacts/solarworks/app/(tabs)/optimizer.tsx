@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Component } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Platform, ActivityIndicator, Alert,
@@ -13,6 +13,34 @@ import { NativeMap } from "@/components/NativeMap";
 import { EngCalc } from "@/utils/engCalc";
 
 type TiltMode = "year_round" | "summer" | "winter";
+
+// ── Map error boundary ──────────────────────────────────────────────────────
+interface MapBoundaryState { crashed: boolean }
+class MapErrorBoundary extends Component<{ children: React.ReactNode; lat: number; lng: number }, MapBoundaryState> {
+  state: MapBoundaryState = { crashed: false };
+  static getDerivedStateFromError() { return { crashed: true }; }
+  componentDidCatch() {}
+  render() {
+    if (this.state.crashed) {
+      return (
+        <View style={mapFallback.box}>
+          <Feather name="map-pin" size={32} color="#E87C27" />
+          <Text style={mapFallback.title}>Map unavailable</Text>
+          <Text style={mapFallback.coords}>
+            {this.props.lat.toFixed(5)}, {this.props.lng.toFixed(5)}
+          </Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+const mapFallback = StyleSheet.create({
+  box: { flex: 1, minHeight: 260, alignItems: "center", justifyContent: "center", backgroundColor: "#f5f5f7", gap: 8 },
+  title: { fontSize: 14, fontWeight: "600", color: "#555" },
+  coords: { fontSize: 12, color: "#888" },
+});
+// ───────────────────────────────────────────────────────────────────────────
 
 export default function OptimizerScreen() {
   const colors = useColors();
@@ -101,14 +129,16 @@ export default function OptimizerScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: colors.background }]}>
       <View style={styles.mapContainer}>
-        <NativeMap
-          latitude={lat}
-          longitude={lng}
-          onPress={(newLat, newLng) => {
-            setLat(newLat); setLng(newLng);
-            setLatInput(newLat.toFixed(6)); setLngInput(newLng.toFixed(6));
-          }}
-        />
+        <MapErrorBoundary lat={lat} lng={lng}>
+          <NativeMap
+            latitude={lat}
+            longitude={lng}
+            onPress={(newLat, newLng) => {
+              setLat(newLat); setLng(newLng);
+              setLatInput(newLat.toFixed(6)); setLngInput(newLng.toFixed(6));
+            }}
+          />
+        </MapErrorBoundary>
         <TouchableOpacity
           style={[styles.gpsBtn, { backgroundColor: colors.primary }]}
           onPress={locateMe}
