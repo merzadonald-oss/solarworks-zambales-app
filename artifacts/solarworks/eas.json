@@ -20,7 +20,7 @@
         "buildType": "app-bundle"
       },
       "node": "20.9.0",
-      "java": "17"
+      "image": "latest"
     }
   },
   "submit": {
