@@ -27,8 +27,16 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "INTERNET",
+<<<<<<< Updated upstream
         "VIBRATE"
       ]
+=======
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "versionCode": 6
+>>>>>>> Stashed changes
     },
     "web": {
       "favicon": "./assets/images/icon.png"
