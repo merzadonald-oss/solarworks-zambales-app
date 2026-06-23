@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "SolarWorks Zambales",
-    "slug": "solarworks",
+    "slug": "solarworks-zambales",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
