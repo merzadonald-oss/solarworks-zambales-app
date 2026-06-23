@@ -19,7 +19,8 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "node": "20.9.0"
+      "node": "20.9.0",
+      "java": "17"
     }
   },
   "submit": {
