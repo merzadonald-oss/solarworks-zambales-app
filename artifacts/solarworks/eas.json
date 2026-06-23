@@ -20,9 +20,7 @@
         "buildType": "apk"
       },
       "node": "20.9.0",
-      "env": {
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
-      }
+      "image": "latest"
     }
   },
   "submit": {
